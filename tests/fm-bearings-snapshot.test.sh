@@ -41,6 +41,14 @@ case "${1:-}" in
       *) printf 'all quiet\n> \n' ;;
     esac
     ;;
+  list-windows)
+    # fm_backend_agent_alive's session inventory (bin/fm-fleet-snapshot.sh's
+    # endpoint.agent_alive, now populated for every kind, not just secondmates).
+    # This fixture has no real tmux session behind it, so fail generically -
+    # NOT one of the classifier's recognized missing-session/server/socket
+    # patterns - so it reads unreadable rather than a false "missing"/"dead".
+    echo "list-windows not configured for this fixture" >&2
+    exit 1 ;;
 esac
 exit 0
 SH
