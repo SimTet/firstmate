@@ -145,6 +145,21 @@ handle_push_transition() {  # <backend> <session> <record>
   to=$(fm_transition_to_status "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
   window="$session:$pane_id"
+  # The raw stream drain (bin/backends/herdr.sh's fm_backend_herdr_wait_transition)
+  # forwards whatever edge the reader delivers - it is not re-filtered against the
+  # caller's own subscribed pane list - so a torn-down task's former pane, or its
+  # surviving husk shell (crew-exit-probe incident, 2026-08-16: the harness process
+  # died but the pane/shell kept answering), can keep delivering edges long after
+  # teardown removed its state/<id>.meta. Recorded-task membership is the one
+  # authoritative test (matches recorded_windows' own poll-path filter): commit the
+  # transition so herdr's own escalation marker still advances - the same edge is
+  # never re-evaluated as fresh on a later drain - then absorb silently. A live,
+  # currently-recorded task is completely unaffected: this check is a no-op for it.
+  if ! fm_backend_meta_for_window "$window" "$STATE" >/dev/null; then
+    fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
+    triage_log "absorbed push $to (no recorded task for this pane - retired or unknown endpoint): $window"
+    return
+  fi
   task=$(window_to_task "$window" "$STATE")
   # A declared wait already names the human this transition would report: an
   # external dependency, or the captain a verified hold transferred the work to.

@@ -69,6 +69,35 @@ fm_write_meta "$STATE_DIR/tk1.meta" "window=default:wG:pQ" "backend=herdr" "kind
 [ ! -e "$STATE_DIR/.herdr-escalated-default_wG_pQ" ] || fail "a failed durable enqueue must leave the blocked edge eligible for reconnect reconciliation"
 pass "handle_push_transition: enqueue failure cannot commit the Herdr dedupe marker"
 
+# --- handle_push_transition: absorb (no wake, no enqueue) for a retired pane --
+# Regression for the crew-exit-probe decision's accepted scope (2026-08-16):
+# the raw event drain forwards whatever pane_id the reader delivers with no
+# cross-check against the caller's own subscribed window list, so a torn-down
+# task's former pane (no state/<id>.meta left at all - the observed live
+# symptom, default:w4:p3/p4 waking firstmate with nothing actionable) must
+# never wake the supervisor, even though herdr itself still reports it blocked.
+
+reset_state
+# Deliberately no fm_write_meta call: no task anywhere records this window.
+handle_push_transition herdr default "$(mkrec wZ:pR blocked)"
+if [ -e "$STATE_DIR/.wake-queue" ] && grep -q 'stale' "$STATE_DIR/.wake-queue"; then
+  fail "a pane with no recorded task must NOT enqueue a stale wake: $(cat "$STATE_DIR/.wake-queue")"
+fi
+[ ! -s "$WAKE_LOG" ] || fail "a pane with no recorded task must not wake the supervisor"
+[ -e "$STATE_DIR/.herdr-escalated-default_wZ_pR" ] || fail "the retired-pane edge must still be committed so it is never re-evaluated as fresh"
+grep -q 'absorbed push' "$STATE_DIR/.watch-triage.log" 2>/dev/null || fail "the retired-pane absorb should be logged to the triage log"
+pass "handle_push_transition: a pane with no recorded task (torn down, or never one) is absorbed - never a wake"
+
+# The exact same edge on the exact same pane DOES still wake once that pane is
+# a currently-recorded live task - proves the fix is scoped to unrecorded
+# panes only, never weakening genuine detection for a live crew.
+reset_state
+fm_write_meta "$STATE_DIR/tk1b.meta" "window=default:wZ:pR" "backend=herdr" "kind=ship"
+handle_push_transition herdr default "$(mkrec wZ:pR blocked)"
+[ -s "$WAKE_LOG" ] || fail "the same window must still wake once it is a recorded live task"
+grep -q 'default:wZ:pR' "$STATE_DIR/.wake-queue" 2>/dev/null || fail "the live task's stale record must still name its window"
+pass "handle_push_transition: the identical pane still wakes once it is a recorded live task (fix is scoped to unrecorded panes)"
+
 # --- handle_push_transition: absorb (no wake, no enqueue) for a declared pause -
 
 reset_state
