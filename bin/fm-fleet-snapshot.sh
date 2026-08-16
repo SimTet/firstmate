@@ -40,8 +40,13 @@
 #     against current_state; hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
 #     endpoint.exists is the cheap backend endpoint-presence read.
-#     endpoint.agent_alive is populated for secondmates only, where it is useful
-#     return-channel supervision data; other tasks use "not_checked".
+#     endpoint.agent_alive is the recovery-grade agent-state verdict
+#     (fm_backend_agent_alive, bin/fm-backend.sh) for every task with a recorded
+#     target, remote or local: alive/dead when the backend has a confident
+#     classifier, else "unknown" (no classifier for this backend, or an
+#     inconclusive read) - never a false dead. A remote secondmate target reuses
+#     its own alive/dead/missing/other mapping above instead of this call.
+#     "not_checked" appears only when the task has no recorded target at all.
 #   scout_reports[]: present data/<id>/report.md pointers.
 #   main_inventory: {valid,reason,orphan_in_flight[],unstructured_current_count} -
 #     main-home current-inventory checks shared with secondmate_home_summary_json
@@ -554,7 +559,7 @@ task_json_lines() {
           endpoint_exists=false
         fi
       fi
-      if [ "$kind" = secondmate ] && [ -n "$target" ]; then
+      if [ -n "$target" ]; then
         agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
       fi
     fi

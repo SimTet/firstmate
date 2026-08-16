@@ -15,7 +15,7 @@
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
 # token-tight line firstmate can read every heartbeat:
 #
-#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>
+#   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|remote-endpoint|agent-state|none> · <detail>
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
@@ -39,13 +39,19 @@
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
 #      agree, and are reported as parked.
-#   4. No run for this crew (pre-validation, or kind=scout): fall back to the
+#   4. No run for this crew (pre-validation, or kind=scout): consult the
+#      recovery-grade agent-state classifier (fm_backend_agent_state, owned by
+#      bin/fm-backend.sh) first; a CONFIDENT dead/missing verdict reports
+#      unknown · agent-state instead of trusting a frozen busy-hook read or the
+#      status log - closes the incident where a harness process died but its
+#      pane/shell kept answering as "working" forever. Any other verdict
+#      (unverified/unreadable/ambiguous) changes nothing: fall back to the
 #      recorded backend's pane busy state, then the status log's last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
 #      `resolved` never become current state or detail.
-#   5. Missing meta or torn-down worktree: report unknown · none. If no run is
-#      attributed to this crew, a dead endpoint also reports unknown · none rather
-#      than trusting a stale status log.
+#   5. Missing meta or torn-down worktree: report unknown · none. An unreadable
+#      backend target (pane/session itself gone) also reports unknown · none;
+#      see 4 for the agent-state check applied while the target still answers.
 #
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
 # of state; exit 2 only on a usage error (no id).
@@ -590,6 +596,27 @@ fi
 # unknown rather than trusting a possibly-stale status log as the current state.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
+
+# Recovery-grade agent liveness, ahead of both the busy-hook read and the
+# status-log fallback below: pane_readable only proves the pane/shell answers,
+# not that a harness process is actually running in it, and both
+# crew_busy_verdict (frozen hook state) and the status log's last line can keep
+# reading "working" forever once that process is dead while its shell survives.
+# fm_backend_agent_state is the one owner of this question (bin/fm-backend.sh;
+# already used by fm-control.sh, fm-spawn.sh, fm-bootstrap.sh, fm-watch.sh,
+# fm-stow-cascade.sh) - reused here rather than forking a second classifier.
+# Only a CONFIDENT dead/missing verdict changes behavior: unverified (backend
+# has no classifier - today only tmux and herdr do), unreadable, and ambiguous
+# all fall through with zero effect, byte-identical to before this check
+# existed, because a false "crew is dead" would trigger recovery against a live
+# worker - worse than the silent-working gap this closes. Cost is one bounded
+# backend-native call (a handful of local tmux/ps reads, or one herdr API call)
+# added to the no-run fallback path only, never the run-step path above and
+# never a network call.
+AGENT_STATE=$(fm_backend_agent_state "$TASK_BACKEND" "$BACKEND_TARGET" 2>/dev/null) || AGENT_STATE=unreadable
+case "$AGENT_STATE" in
+  dead|missing) emit unknown agent-state "harness process confirmed $AGENT_STATE: $BACKEND_TARGET" ;;
+esac
 
 # Secondmates idle on their own watcher (idle pane = healthy), so the busy
 # state is not meaningful for them; read their state from the status log only.

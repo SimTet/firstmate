@@ -25,6 +25,15 @@
 #       This is the direct regression pair for the 2026-07-02 herdr incident,
 #       proving the watcher's own absorb-only-when-provably-working predicate
 #       benefits from the fix in both directions.
+#   (l) no run + a CONFIRMED dead/missing agent overrides a frozen busy-hook
+#       record or a stale "working:" status log        -> agent-state, not pane
+#       or status-log. Regression for the crew-exit-probe incident (2026-08-16):
+#       a harness process died while its pane/shell kept answering, so the old
+#       fallback kept reporting "working" forever from whichever signal was
+#       last written before the process died. Every inconclusive verdict
+#       (ambiguous/unreadable/unverified) must fall through with NO effect -
+#       proven here by reproducing the exact pre-fix output for each one, not
+#       just asserting it stayed the same state name.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -85,11 +94,32 @@ set -u
 case "${1:-}" in
   display-message)
     [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] && exit 1
+    for a in "$@"; do
+      case "$a" in
+        *pane_current_command*)
+          [ -n "${FM_FAKE_TMUX_AGENT_COMM:-}" ] && { printf '%s\n' "$FM_FAKE_TMUX_AGENT_COMM"; exit 0; }
+          break ;;
+      esac
+    done
     printf '%%1\n' ;;
   capture-pane)
     [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] && exit 1
     if [ "${FM_FAKE_BUSY:-0}" = 1 ]; then printf 'work in progress\n%s\n' "${FM_FAKE_BUSY_TEXT:-esc to interrupt}"
     else printf 'all quiet\n> \n'; fi ;;
+  list-windows)
+    # fm_backend_tmux_agent_state's own session inventory (the recovery-grade
+    # agent-state classifier fm-crew-state.sh's no-run fallback now consults).
+    # Opt in per-test with FM_FAKE_TMUX_AGENT_WINDOW to drive a specific
+    # alive/dead/missing verdict. Left unset, this fails with a message that
+    # does NOT match the classifier's missing-session/server/socket patterns,
+    # so it reads unreadable - the safe no-op every other fixture in this file
+    # relies on, since none of them care about agent-state.
+    if [ -n "${FM_FAKE_TMUX_AGENT_WINDOW:-}" ]; then
+      printf '%s\n' "$FM_FAKE_TMUX_AGENT_WINDOW"
+      exit 0
+    fi
+    printf 'list-windows not configured for this fixture\n' >&2
+    exit 1 ;;
 esac
 exit 0
 SH
@@ -170,8 +200,11 @@ reset_fakes() {
   FM_FAKE_HERDR_MISSING=0
   FM_FAKE_HERDR_AGENT_STATUS=""
   FM_FAKE_CI_LOGS=""
+  FM_FAKE_TMUX_AGENT_WINDOW=""
+  FM_FAKE_TMUX_AGENT_COMM=""
   export FM_FAKE_AXI_STATUS FM_FAKE_AXI_STATUS_RUN FM_FAKE_RUNS_LIST FM_FAKE_BUSY FM_FAKE_BUSY_TEXT FM_FAKE_TMUX_MISSING
   export FM_FAKE_HERDR_BUSY FM_FAKE_HERDR_MISSING FM_FAKE_HERDR_AGENT_STATUS FM_FAKE_CI_LOGS
+  export FM_FAKE_TMUX_AGENT_WINDOW FM_FAKE_TMUX_AGENT_COMM
 }
 
 # --- run-object fixtures (TOON, as `no-mistakes axi status` emits) -----------
@@ -1084,6 +1117,159 @@ test_dead_window_still_reports_active_run_step() {
   pass "closed pane still reports an active run-step"
 }
 
+# (l) crew-exit-probe regression: a CONFIRMED-dead harness agent (pane_readable
+# still succeeds - the shell survives - but fm_backend_agent_state reads
+# dead/missing) must override a frozen "working:" status log rather than
+# reading it as current state.
+test_fast_path_confirmed_dead_agent_overrides_stale_status_log() {
+  reset_fakes
+  local d; d=$(new_case dead-agent-status-log)
+  make_repo_on_branch "$d/wt" fm/feat-deadagent
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-deadagent.meta" "window=fm:fm-feat-deadagent" "worktree=$d/wt" "kind=ship" "harness=claude"
+  # The frozen leftover from the last thing the crew ever wrote before its
+  # harness process died - exactly the incident's observed status line.
+  printf 'working: pipeline fix round in progress\n' > "$d/state/feat-deadagent.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  # Session inventory is readable and reports the window (the shell survived),
+  # but the only foreground process is a bare shell -> confirmed dead, not just
+  # unreadable/ambiguous.
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-feat-deadagent"
+  FM_FAKE_TMUX_AGENT_COMM="bash"
+  local out; out=$(run_crew_state "$d" feat-deadagent)
+  assert_not_contains "$out" "state: working" "a confirmed-dead agent must never read working from a frozen status log"
+  assert_contains "$out" "state: unknown" "confirmed-dead agent -> unknown"
+  assert_contains "$out" "source: agent-state" "confirmed-dead agent names its source distinctly"
+  assert_contains "$out" "dead" "the detail names the confirmed verdict"
+  pass "a confirmed-dead agent overrides a frozen working status log"
+}
+
+# The more dangerous variant: the crew died mid-turn, so the LAST thing its own
+# stop/prompt hook ever wrote was "busy" (source: pane), which previously
+# reported working forever with no escalation path at all (pane source is what
+# crew_absorb_class treats as provably working). This is the more dangerous
+# case because it also feeds the watcher's absorb-only-when-provably-working
+# predicate (bin/fm-classify-lib.sh's crew_absorb_class), and would otherwise
+# never let a wedge timer even start.
+test_fast_path_confirmed_dead_agent_overrides_frozen_busy_hook() {
+  reset_fakes
+  local d; d=$(new_case dead-agent-busy-hook)
+  make_repo_on_branch "$d/wt" fm/feat-deadbusy
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-deadbusy.meta" "window=fm:fm-feat-deadbusy" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" feat-deadbusy)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" feat-deadbusy busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-feat-deadbusy"
+  FM_FAKE_TMUX_AGENT_COMM="bash"
+  local out; out=$(run_crew_state "$d" feat-deadbusy)
+  assert_not_contains "$out" "state: working" "a confirmed-dead agent must override a frozen busy hook record too"
+  assert_not_contains "$out" "source: pane" "a confirmed-dead agent must not be read through the pane/busy-hook source"
+  assert_contains "$out" "source: agent-state" "confirmed-dead agent names its source distinctly"
+  pass "a confirmed-dead agent overrides a frozen busy hook record"
+}
+
+# The regression that matters most: an EXPLICITLY confirmed-alive agent (not
+# merely unverified/unreadable) must change nothing - a genuinely alive-but-quiet
+# worker (e.g. blocked on a long foreground call) must still read working.
+test_fast_path_confirmed_alive_agent_still_reports_working() {
+  reset_fakes
+  local d; d=$(new_case alive-agent-busy)
+  make_repo_on_branch "$d/wt" fm/feat-aliveagent
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-aliveagent.meta" "window=fm:fm-feat-aliveagent" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" feat-aliveagent)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" feat-aliveagent busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-feat-aliveagent"
+  FM_FAKE_TMUX_AGENT_COMM="claude"
+  local out; out=$(run_crew_state "$d" feat-aliveagent)
+  assert_contains "$out" "state: working" "an explicitly confirmed-alive agent still reads working"
+  assert_contains "$out" "source: pane" "an explicitly confirmed-alive agent still uses the busy-hook source"
+  assert_contains "$out" "claude-hook" "the working verdict still names its semantic source"
+  pass "an explicitly confirmed-alive agent still reports working from its busy record"
+}
+
+# Hard requirement: only a CONFIDENT dead/missing verdict may change behavior.
+# ambiguous, unreadable, and unverified (no classifier for this backend) must
+# fall through with output BYTE-IDENTICAL to the pre-fix baseline - demonstrated
+# here by reproducing that exact baseline (test_no_run_idle_pane_uses_log's
+# scenario) under each inconclusive verdict in turn, not merely asserting the
+# state name stayed the same.
+test_fast_path_inconclusive_agent_state_falls_through_unchanged() {
+  reset_fakes
+  local d baseline out
+  d=$(new_case inconclusive-baseline)
+  make_repo_on_branch "$d/wt" fm/feat-inconclusive
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-inconclusive.meta" "window=fm:fm-feat-inconclusive" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'needs-decision: which database?\n' > "$d/state/feat-inconclusive.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-inconclusive
+  # Baseline: no agent-state fixture configured at all (list-windows fails
+  # generically -> unreadable), matching every other test in this file.
+  baseline=$(run_crew_state "$d" feat-inconclusive)
+  assert_contains "$baseline" "state: parked" "sanity: baseline reproduces the no-run idle-pane scenario"
+
+  # ambiguous: session inventory readable, but the foreground process is
+  # neither a recognized shell nor a recognized agent name.
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-feat-inconclusive"
+  FM_FAKE_TMUX_AGENT_COMM="node"
+  out=$(run_crew_state "$d" feat-inconclusive)
+  [ "$out" = "$baseline" ] || fail "an ambiguous agent-state verdict must not change the output (got: $out)"
+
+  # unreadable: explicitly force the same generic list-windows failure the
+  # baseline relies on implicitly, so this case is not accidentally vacuous.
+  FM_FAKE_TMUX_AGENT_WINDOW=""
+  FM_FAKE_TMUX_AGENT_COMM=""
+  out=$(run_crew_state "$d" feat-inconclusive)
+  [ "$out" = "$baseline" ] || fail "an unreadable agent-state verdict must not change the output (got: $out)"
+
+  pass "ambiguous and unreadable agent-state verdicts fall through byte-identical to baseline"
+}
+
+# unverified: a backend with no recovery-grade classifier at all (per
+# bin/fm-backend.sh, only tmux and herdr have one today) must also change
+# nothing, proven the same way: reproduce a real no-run scenario on that
+# backend and confirm the output matches what it would be without the new
+# check ever running (fm_backend_agent_state short-circuits to 'unverified'
+# before touching the network or the pane at all).
+test_fast_path_unverified_backend_falls_through_unchanged() {
+  reset_fakes
+  local d fb; d=$(new_case unverified-backend)
+  make_repo_on_branch "$d/wt" fm/feat-unverified
+  make_fakebin "$d" >/dev/null
+  # orca has a real capture path (so pane_readable succeeds - the endpoint is
+  # readable, matching a genuinely live pane) but fm_backend_agent_state has no
+  # orca classifier and always answers 'unverified' for it, per bin/fm-backend.sh.
+  fb="$d/fakebin"
+  cat > "$fb/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "terminal read") printf '{"ok":true,"result":{"text":"quiet"}}\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/orca"
+  fm_write_meta "$d/state/feat-unverified.meta" "window=orcaterm1" "worktree=$d/wt" "kind=ship" \
+    "harness=claude" "backend=orca"
+  printf 'needs-decision: which database?\n' > "$d/state/feat-unverified.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-unverified
+  local out; out=$(run_crew_state "$d" feat-unverified)
+  assert_contains "$out" "state: parked" "an unverified backend still falls back to the status log"
+  assert_contains "$out" "source: status-log" "an unverified backend's classifier never overrides the status log"
+  pass "a backend with no recovery-grade classifier falls through unchanged"
+}
+
 test_no_timeout_uses_perl_bound() {
   reset_fakes
   local d toolbin out start elapsed calls_file calls
@@ -1586,6 +1772,11 @@ test_no_run_idle_secondmate_resolved_event_not_state
 test_dead_window_ignores_stale_status_log
 test_dead_window_still_reports_terminal_run_step
 test_dead_window_still_reports_active_run_step
+test_fast_path_confirmed_dead_agent_overrides_stale_status_log
+test_fast_path_confirmed_dead_agent_overrides_frozen_busy_hook
+test_fast_path_confirmed_alive_agent_still_reports_working
+test_fast_path_inconclusive_agent_state_falls_through_unchanged
+test_fast_path_unverified_backend_falls_through_unchanged
 test_no_timeout_uses_perl_bound
 test_scout_skips_run_lookup
 test_torn_down_worktree
