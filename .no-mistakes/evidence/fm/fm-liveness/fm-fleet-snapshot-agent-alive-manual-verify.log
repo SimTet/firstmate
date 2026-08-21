@@ -1,0 +1,27 @@
+=== bin/fm-fleet-snapshot.sh --json, kind=ship task, tmux confirms the agent ALIVE ===
+{
+  "id": "ship-task",
+  "kind": "ship",
+  "endpoint": {
+    "target": "fm:fm-ship-task",
+    "exists": true,
+    "agent_alive": "alive",
+    "status": "alive",
+    "observed_at": "2026-08-21T20:29:32Z",
+    "freshness": "fresh"
+  }
+}
+
+=== Same task, tmux confirms the agent DEAD (harness process gone, pane/shell survives) ===
+{
+  "id": "ship-task",
+  "kind": "ship",
+  "endpoint": {
+    "target": "fm:fm-ship-task",
+    "exists": true,
+    "agent_alive": "dead",
+    "status": "dead",
+    "observed_at": "2026-08-21T20:29:32Z",
+    "freshness": "fresh"
+  }
+}

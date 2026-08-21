@@ -1,0 +1,14 @@
+=== Scenario 1: harness process confirmed DEAD, pane/shell still answers, stale 'working:' status log on disk ===
+--- stale status log on disk (last thing written before the harness died) ---
+working: pipeline fix round in progress
+--- fm-crew-state.sh output (pane readable, tmux reports foreground process = bash, not an agent) ---
+state: unknown · source: agent-state · harness process confirmed dead: fm:fm-feat-deadagent
+
+=== Scenario 2: harness process confirmed ALIVE (foreground process = claude), busy-hook says working ===
+--- fm-crew-state.sh output (pane readable, tmux reports foreground process = claude) ---
+state: working · source: pane · harness busy (claude-hook)
+
+=== Scenario 3: no agent-state fixture configured at all (inconclusive/unreadable) - prior behavior preserved ===
+--- fm-crew-state.sh output (pane readable, agent-state classifier unreadable) ---
+state: parked · source: status-log · which database?
+
