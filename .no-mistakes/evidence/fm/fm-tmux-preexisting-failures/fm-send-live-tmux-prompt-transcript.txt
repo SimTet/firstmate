@@ -1,0 +1,23 @@
+Live tmux interactive-prompt transcript (tmux 3.2a)
+The prompt discards literal keys; Enter explicitly chooses DEFAULT_ANSWERED.
+
+[baseline-live] exit=0 default-result=DEFAULT_ANSWERED
+pane after fm-send:
+❯
+DEFAULT_ANSWERED
+❯
+fm-send diagnostic:
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+
+[target-live] exit=1 default-result=
+pane after fm-send:
+❯
+fm-send diagnostic:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: text not accepted into the composer at nm-live-prompt-target-live-31964:0 (harness=claude; backend=tmux); no Enter was sent, so an interactive prompt was not answered. Inspect with fm-peek.sh before retrying.
