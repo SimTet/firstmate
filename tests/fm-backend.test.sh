@@ -630,7 +630,21 @@ make_send_fakebin() {  # <dir> -> echoes fakebin dir; logs every tmux call to $F
 set -u
 { printf 'tmux'; for a in "$@"; do printf '\x1f%s' "$a"; done; printf '\n'; } >> "${FM_TMUX_LOG:?}"
 case "${1:-}" in
-  send-keys) exit 0 ;;
+  send-keys)
+    literal=0; text= key=
+    args=("$@")
+    i=1
+    while [ "$i" -lt "${#args[@]}" ]; do
+      case "${args[$i]}" in
+        -l) literal=1; i=$((i + 1)); text=${args[$i]:-} ;;
+        Enter) key=Enter ;;
+      esac
+      i=$((i + 1))
+    done
+    typed="$FM_TMUX_LOG.typed"
+    if [ "$literal" = 1 ]; then printf '%s' "$text" > "$typed"; fi
+    [ "$key" != Enter ] || rm -f "$typed"
+    exit 0 ;;
   display-message)
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
@@ -643,7 +657,10 @@ case "${1:-}" in
         *) shift ;;
       esac
     done
-    if [ "$start" = 1 ] && [ "$end" = 1 ]; then
+    typed="$FM_TMUX_LOG.typed"
+    if [ -f "$typed" ]; then
+      printf '\n❯ %s\n\n' "$(cat "$typed")"
+    elif [ "$start" = 1 ] && [ "$end" = 1 ]; then
       printf '│    │\n'
     else
       printf '╭────╮\n│    │\n╰────╯\n'

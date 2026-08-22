@@ -48,21 +48,28 @@ case "${1:-}" in
     [ "${FM_FAKE_TMUX_SEND_FAIL:-0}" = 1 ] && exit 1
     shift
     literal=0
+    text=
+    key=
     while [ $# -gt 0 ]; do
       case "$1" in
         -t) shift 2 ;;
-        -l) literal=1; shift ;;
-        *) break ;;
+        -l) literal=1; shift; text=${1:-}; shift ;;
+        *) key=$1; break ;;
       esac
     done
     if [ "$literal" = 1 ]; then
-      printf '%s' "${1:-}" >> "$FM_SEND_LOG"
+      printf '%s' "$text" >> "$FM_SEND_LOG"
+      printf '%s' "$text" > "$FM_SEND_LOG.typed"
+    elif [ "$key" = Enter ]; then
+      rm -f "$FM_SEND_LOG.typed"
     fi
     exit 0 ;;
   display-message)
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  capture-pane)
+    if [ -f "$FM_SEND_LOG.typed" ]; then printf '\n❯ %s\n\n' "$(cat "$FM_SEND_LOG.typed")"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    exit 0 ;;
   list-windows) exit 0 ;;
 esac
 exit 0

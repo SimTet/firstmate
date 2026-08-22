@@ -33,6 +33,12 @@ case "${1:-}" in
       esac
     done
     printf 'send-keys target=%s literal=%s arg=%s\n' "$target" "$literal" "${1:-}" >> "$FM_TMUX_LOG"
+    typed=${FM_FAKE_TMUX_TYPED:-"$FM_TMUX_LOG.typed"}
+    if [ "$literal" = 1 ] && [ "${FM_FAKE_TMUX_DROP_LITERAL:-0}" != 1 ]; then
+      printf '%s' "${1:-}" > "$typed"
+    elif [ "$literal" = 0 ] && [ "${1:-}" = Enter ]; then
+      rm -f "$typed"
+    fi
     # FM_FAKE_TMUX_SEND_KEY_FAIL names one key whose delivery fails, so the
     # --key exit contract can be driven both ways from the same stub.
     if [ "$literal" = 0 ] && [ -n "${FM_FAKE_TMUX_SEND_KEY_FAIL:-}" ] \
@@ -57,7 +63,12 @@ case "${1:-}" in
     printf '%%1\n'
     exit 0 ;;
   capture-pane)
-    printf '╭────╮\n│    │\n╰────╯\n'
+    typed=${FM_FAKE_TMUX_TYPED:-"$FM_TMUX_LOG.typed"}
+    if [ -f "$typed" ]; then
+      printf '\n❯ %s\n\n' "$(cat "$typed")"
+    else
+      printf '\n❯ \n\n'
+    fi
     exit 0 ;;
   list-windows)
     printf 'foreign:%s\n' "${FM_FAKE_TMUX_WINDOW:-fm-lost}"
@@ -197,6 +208,23 @@ test_healthy_fm_id_send_still_works() {
   pass "fm-send strict: healthy fm-<id> sends still type once and submit"
 }
 
+test_dropped_literal_refuses_without_confirming_the_prompt() {
+  local dir fb home err log rc got
+  dir="$TMP_ROOT/dropped-literal"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home droppedliteral); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-prompt.meta" "window=sess:fm-lane-prompt" "kind=ship" "harness=claude"
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_DROP_LITERAL=1 \
+    "$SEND" lane-prompt "continue with the requested work" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a literal ignored by an interactive prompt reported a confirmed send"
+  got=$(cat "$log")
+  assert_contains "$got" "target=sess:fm-lane-prompt literal=1 arg=continue with the requested work" "the prompt regression did not attempt the literal text"
+  assert_not_contains "$got" "target=sess:fm-lane-prompt literal=0 arg=Enter" "a rejected literal must not press Enter and answer the prompt"
+  assert_contains "$(cat "$err")" "not accepted into the composer" "the prompt refusal must name the failed composer acceptance"
+  pass "fm-send strict: a prompt that drops literal text refuses before Enter"
+}
+
 # A --key send is how firstmate interrupts a worker, so its exit status is the
 # only signal that the interrupt actually landed.
 # Reporting success for a key that was never delivered would leave supervision
@@ -233,3 +261,4 @@ test_prefixless_herdr_pane_id_fails
 test_unmatched_single_colon_target_must_exist
 test_fm_prefixed_herdr_session_is_an_explicit_target
 test_healthy_fm_id_send_still_works
+test_dropped_literal_refuses_without_confirming_the_prompt

@@ -214,11 +214,28 @@ fm_pane_is_busy() {  # <target> [harness]
   [ "$(fm_pane_busy_state "$1" "${2:-}")" = busy ]
 }
 
-# fm_tmux_submit_core: type <text> into <target> ONCE, then submit with Enter,
-# verifying the composer cleared. Retries Enter ONLY — never retypes, because a
-# swallowed Enter leaves our text in the composer and retyping would duplicate
-# it. Echoes the final proof-carrying verdict on stdout so callers can require
-# exact `empty` before treating submission as confirmed.
+# fm_tmux_submit_payload_accepted: after the literal text is typed, prove that
+# the selected composer shows the payload's own tail before an Enter can reach
+# the pane. A modal dialog can discard printable text but treat Enter as its
+# default answer, so an absent payload must refuse without sending Enter.
+fm_tmux_submit_payload_accepted() {  # <target> <text>
+  local target=$1 text=$2 pane state content
+  pane=$(fm_tmux_composer_capture "$target") || return 1
+  state=$(fm_tmux_composer_state "$target")
+  case "$state" in
+    pending|pending-unproven) ;;
+    *) return 1 ;;
+  esac
+  content=$(fm_composer_extract_selected_content "$(fm_tmux_composer_caps)" "$pane") || return 1
+  fm_composer_content_has_payload_tail "$content" "$text"
+}
+
+# fm_tmux_submit_core: type <text> into <target> ONCE, prove the selected
+# composer accepted it, then submit with Enter while verifying the composer
+# cleared. Retries Enter ONLY — never retypes, because a swallowed Enter leaves
+# our text in the composer and retyping would duplicate it. Echoes the final
+# proof-carrying verdict on stdout so callers can require exact `empty` before
+# treating submission as confirmed.
 # Busy-queued Enter (opencode 1.18.4): the harness accepts Enter while mid-turn
 # and queues it for after the current turn, but keeps the typed text visible in
 # the composer. Once the Enter-retry budget is spent and a structurally proven
@@ -287,5 +304,9 @@ fm_tmux_submit_core() {  # <target> <text> <retries> <enter-sleep> <settle>
   [ "$baseline_state" = idle ] && baseline_idle=1
   tmux send-keys -t "$target" -l "$text" 2>/dev/null || { printf 'send-failed'; return 0; }
   sleep "$settle"
+  if ! fm_tmux_submit_payload_accepted "$target" "$text"; then
+    printf 'not-accepted'
+    return 0
+  fi
   fm_tmux_submit_enter_core "$target" "$retries" "$sleep_s" "$baseline_idle"
 }

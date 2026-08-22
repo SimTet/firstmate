@@ -36,11 +36,26 @@ make_stubs() {  # <dir> -> echoes fakebin dir
 #!/usr/bin/env bash
 set -u
 case "${1:-}" in
-  send-keys) exit 0 ;;
+  send-keys)
+    shift; literal=0; text= key=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift; text=${1:-}; shift ;;
+        *) key=$1; shift ;;
+      esac
+    done
+    typed="$FM_SLEEP_LOG.typed"
+    if [ "$literal" = 1 ]; then printf '%s' "$text" > "$typed"; fi
+    [ "$key" != Enter ] || rm -f "$typed"
+    exit 0 ;;
   display-message)
     for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
     printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  capture-pane)
+    typed="$FM_SLEEP_LOG.typed"
+    if [ -f "$typed" ]; then printf '\n❯ %s\n\n' "$(cat "$typed")"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    exit 0 ;;
   list-windows) exit 0 ;;
 esac
 exit 0

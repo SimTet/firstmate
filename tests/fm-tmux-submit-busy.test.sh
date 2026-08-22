@@ -42,10 +42,18 @@ case "${1:-}" in
     fi
     cat "$COMPOSER" 2>/dev/null; exit 0 ;;
   send-keys)
-    shift; is_enter=0
+    shift; is_enter=0; literal=0; text=
     while [ "$#" -gt 0 ]; do
-      case "$1" in -t) shift ;; -l) ;; Enter) is_enter=1 ;; esac; shift
+      case "$1" in
+        -t) shift 2; continue ;;
+        -l) literal=1; shift; text=${1:-}; shift; continue ;;
+        Enter) is_enter=1; shift; continue ;;
+        *) shift ;;
+      esac
     done
+    if [ "$literal" = 1 ] && [ "${FM_FAKE_ACCEPT_LITERAL:-0}" = 1 ]; then
+      printf '\n❯ %s\n\n' "$text" > "$COMPOSER"
+    fi
     if [ "$is_enter" = 1 ]; then
       [ -z "${FM_FAKE_SENT:-}" ] || printf 'Enter\n' >> "$FM_FAKE_SENT"
       if [ -n "${FM_FAKE_SWALLOW:-}" ] && [ -f "$FM_FAKE_SWALLOW" ]; then
@@ -202,11 +210,46 @@ test_failed_baseline_capture_keeps_busy_unknown_unconfirmed() {
     FM_FAKE_CAPTURE_COUNT="$dir/captures" FM_FAKE_FAIL_FIRST_CAPTURE=1 \
     FM_FAKE_SWALLOW="$dir/.swallow" FM_FAKE_PERSIST_SWALLOW=1 FM_FAKE_APPEND_BUSY=1 \
     fm_tmux_submit_core "win" "fix" 3 0.05 0.05 > "$vfile" 2>/dev/null
-  [ "$(cat "$vfile")" = unknown ] \
-    || fail "a failed idle-baseline capture must not let a later busy footer confirm delivery, got '$(cat "$vfile")'"
-  grep -q 'Working' "$composer" \
-    || fail "failed-baseline regression did not render the post-Enter busy footer"
-  pass "fm_tmux_submit_core: failed baseline capture disables busy unknown conversion"
+  [ "$(cat "$vfile")" = not-accepted ] \
+    || fail "a failed baseline without a visible payload must refuse before Enter, got '$(cat "$vfile")'"
+  ! grep -q 'Working' "$composer" \
+    || fail "a failed payload proof must not reach the Enter/busy-confirmation path"
+  pass "fm_tmux_submit_core: a failed baseline without payload proof refuses before Enter"
+}
+
+test_visible_literal_submits_normally() {
+  local dir fakebin composer sent vfile
+  dir="$TMP_ROOT/visible-literal"
+  fakebin=$(make_submit_mock "$dir")
+  composer="$dir/composer"
+  sent="$dir/sent.log"
+  vfile="$dir/verdict"
+  printf '\n❯ \n\n' > "$composer"
+  : > "$sent"
+  PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$composer" FM_FAKE_SENT="$sent" FM_FAKE_ACCEPT_LITERAL=1 \
+    fm_tmux_submit_core "win" "continue with the requested work" 3 0.05 0.05 > "$vfile" 2>/dev/null
+  [ "$(cat "$vfile")" = empty ] \
+    || fail "a visible literal must still submit normally, got '$(cat "$vfile")'"
+  [ "$(grep -c '^Enter$' "$sent" 2>/dev/null || true)" -eq 1 ] \
+    || fail "a visible literal must receive one Enter"
+  pass "fm_tmux_submit_core: visible literal text submits normally"
+}
+
+test_dropped_literal_refuses_before_enter() {
+  local dir fakebin composer sent vfile
+  dir="$TMP_ROOT/dropped-literal"
+  fakebin=$(make_submit_mock "$dir")
+  composer="$dir/composer"
+  sent="$dir/sent.log"
+  vfile="$dir/verdict"
+  printf 'Choose an action:\n1. Stop, do not act\n2. Continue\nPress Enter to confirm\n' > "$composer"
+  : > "$sent"
+  PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$composer" FM_FAKE_SENT="$sent" \
+    fm_tmux_submit_core "win" "continue with the requested work" 3 0.05 0.05 > "$vfile" 2>/dev/null
+  [ "$(cat "$vfile")" = not-accepted ] \
+    || fail "a prompt that drops literal text must refuse before Enter, got '$(cat "$vfile")'"
+  [ ! -s "$sent" ] || fail "a prompt that drops literal text still received Enter"$'\n'"$(cat "$sent")"
+  pass "fm_tmux_submit_core: dropped literal text refuses before Enter"
 }
 
 test_busy_pane_ambiguous_pending_retries_without_conversion() {
@@ -335,6 +378,8 @@ test_busy_pane_composer_clears_first_try
 test_idle_pane_composer_clears_first_try
 test_busy_pane_unknown_stays_unknown
 test_failed_baseline_capture_keeps_busy_unknown_unconfirmed
+test_visible_literal_submits_normally
+test_dropped_literal_refuses_before_enter
 test_busy_pane_ambiguous_pending_retries_without_conversion
 test_unrecognized_state_skips_busy_conversion
 test_claude_busy_signature_uses_real_capture_shapes
