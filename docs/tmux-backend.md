@@ -82,6 +82,8 @@ The submit acknowledgement and away-mode supervisor-pane busy guard below still 
 The supervisor guard selects only the detected primary harness's signature rather than a global union of vendor patterns.
 
 `bin/fm-tmux-lib.sh` owns exact type-and-submit mechanics.
+It snapshots the selected composer content before typing and sends Enter only after a later selected-composer capture proves that the exact message was appended, including when a user draft was already present.
+If the append cannot be proven, `fm-send.sh` refuses without pressing Enter, so an interactive prompt cannot receive its default answer; inspect with `fm-peek.sh` before retrying.
 It types a message once and retries Enter only until the composer clears.
 Only a proven empty composer is a positive delivery acknowledgement.
 Text left in established structure remains `pending`, text in ambiguous structure remains unproven, and unreadable or unsafe state remains unknown.
@@ -108,6 +110,7 @@ tests/fm-kimi-harness.test.sh
 tests/fm-cursor-harness.test.sh
 tests/fm-muse-harness.test.sh
 tests/fm-tmux-submit-busy.test.sh
+tests/fm-send-strict.test.sh
 tests/fm-bootstrap.test.sh
 ```
 

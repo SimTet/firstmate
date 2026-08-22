@@ -214,12 +214,20 @@ fm_pane_is_busy() {  # <target> [harness]
   [ "$(fm_pane_busy_state "$1" "${2:-}")" = busy ]
 }
 
+# fm_tmux_composer_content: extract real content from the selected tmux
+# composer, including a nonempty pre-existing draft.
+fm_tmux_composer_content() {  # <target>
+  local target=$1 pane
+  pane=$(fm_tmux_composer_capture "$target") || return 1
+  fm_composer_extract_selected_content "$(fm_tmux_composer_caps)" "$pane"
+}
+
 # fm_tmux_submit_payload_accepted: after the literal text is typed, prove that
-# the selected composer shows the payload's own tail before an Enter can reach
-# the pane. A modal dialog can discard printable text but treat Enter as its
-# default answer, so an absent payload must refuse without sending Enter.
-fm_tmux_submit_payload_accepted() {  # <target> <text>
-  local target=$1 text=$2 pane state content
+# the selected composer received an append to the exact selection captured
+# before typing. A modal dialog can discard printable text but treat Enter as
+# its default answer, so an unobserved append must refuse without Enter.
+fm_tmux_submit_payload_accepted() {  # <target> <before> <text>
+  local target=$1 before=$2 text=$3 pane state content
   pane=$(fm_tmux_composer_capture "$target") || return 1
   state=$(fm_tmux_composer_state "$target")
   case "$state" in
@@ -227,7 +235,7 @@ fm_tmux_submit_payload_accepted() {  # <target> <text>
     *) return 1 ;;
   esac
   content=$(fm_composer_extract_selected_content "$(fm_tmux_composer_caps)" "$pane") || return 1
-  fm_composer_content_has_payload_tail "$content" "$text"
+  fm_composer_content_observed_append "$before" "$content" "$text"
 }
 
 # fm_tmux_submit_core: type <text> into <target> ONCE, prove the selected
@@ -296,7 +304,8 @@ fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep> [baseline-idle
 }
 
 fm_tmux_submit_core() {  # <target> <text> <retries> <enter-sleep> <settle>
-  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 baseline_idle='' baseline_state
+  local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 baseline_idle='' baseline_state before
+  before=$(fm_tmux_composer_content "$target") || { printf 'not-accepted'; return 0; }
   # The turn-started baseline must predate our own typing: a pane already
   # busy before the text lands can turn "busy" for reasons unrelated to our
   # Enter, so only a clean idle-to-busy transition may confirm a submit.
@@ -304,7 +313,7 @@ fm_tmux_submit_core() {  # <target> <text> <retries> <enter-sleep> <settle>
   [ "$baseline_state" = idle ] && baseline_idle=1
   tmux send-keys -t "$target" -l "$text" 2>/dev/null || { printf 'send-failed'; return 0; }
   sleep "$settle"
-  if ! fm_tmux_submit_payload_accepted "$target" "$text"; then
+  if ! fm_tmux_submit_payload_accepted "$target" "$before" "$text"; then
     printf 'not-accepted'
     return 0
   fi

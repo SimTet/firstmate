@@ -93,15 +93,27 @@ case "${1:-}" in
     payload=${1:-}
     if [ "$literal" = 1 ]; then
       printf '%s\n' "$payload" >> "$D/literal"
-      if [ -z "${FM_FAKE_NEVER_DIES:-}" ] \
+      if [ -n "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] \
          && { [ "$payload" = /exit ] || [ "$payload" = /quit ]; }; then
         printf 'zsh' > "$D/command"
+        exit 1
+      fi
+      if [ "${FM_FAKE_DROP_LITERAL:-0}" != 1 ]; then
+        printf '%s' "$payload" > "$D/typed"
       fi
       case "$payload" in
         *'encode launch-brief'*) cat "$D/becomes" > "$D/command" ;;
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
+      if [ "$payload" = Enter ] && [ -f "$D/typed" ]; then
+        typed=$(cat "$D/typed")
+        if [ -z "${FM_FAKE_NEVER_DIES:-}" ] \
+           && { [ "$typed" = /exit ] || [ "$typed" = /quit ]; }; then
+          printf 'zsh' > "$D/command"
+        fi
+        rm -f "$D/typed"
+      fi
       if [ -n "${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" ] \
          && { [ "$payload" = Escape ] || [ "$payload" = C-c ]; }; then
         printf 'zsh' > "$D/command"
@@ -125,7 +137,13 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
-    if [ -f "$D/pane" ]; then cat "$D/pane"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    if [ -f "$D/pane" ]; then
+      cat "$D/pane"
+    elif [ -f "$D/typed" ]; then
+      printf '\n❯ %s\n\n' "$(cat "$D/typed")"
+    else
+      printf '\n❯ %s\n\n' "${FM_FAKE_STALE_COMPOSER:-}"
+    fi
     exit 0 ;;
   list-windows)
     if [ -f "$D/windows" ]; then cat "$D/windows"; fi
@@ -197,6 +215,8 @@ run_control() {
     FM_FAKE_MUSE_LOG="${FM_FAKE_MUSE_LOG:-}" \
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
+    FM_FAKE_DROP_LITERAL="${FM_FAKE_DROP_LITERAL:-}" \
+    FM_FAKE_STALE_COMPOSER="${FM_FAKE_STALE_COMPOSER:-}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -800,6 +820,20 @@ test_agent_that_does_not_stop_fails_closed() {
   pass "fm-control exit: a stubborn agent reports delivered input and an unconfirmed exit"
 }
 
+test_exit_refuses_a_not_accepted_literal_without_reporting_delivery() {
+  local dir out rc
+  dir=$(new_case not-accepted-exit)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  out=$(FM_FAKE_DROP_LITERAL=1 FM_FAKE_STALE_COMPOSER=/exit run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "an exit literal refused by the composer must fail closed"$'\n'"$out"
+  assert_contains "$out" "exit command could not be sent" "the refusal should be reported as an undelivered lifecycle command"
+  assert_not_contains "$out" "exit-command=delivered" "a not-accepted lifecycle command must not be reported as delivered"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused literal must not stop the agent"
+  assert_not_contains "$(cat "$dir/fake/keys")" "Enter" "a refused lifecycle literal must not press Enter"
+  pass "fm-control exit: a not-accepted literal fails before delivery confirmation"
+}
+
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed() {
   local dir out rc
   dir=$(new_case nosettle)
@@ -901,6 +935,7 @@ test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed
+test_exit_refuses_a_not_accepted_literal_without_reporting_delivery
 test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation
 test_secondmate_control_command_carries_no_marker

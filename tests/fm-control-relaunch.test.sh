@@ -72,8 +72,11 @@ case "${1:-}" in
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit)
-          printf 'zsh' > "$D/command"
-          [ -z "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
+          if [ -n "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ]; then
+            printf 'zsh' > "$D/command"
+            exit 1
+          fi
+          printf '%s' "$payload" > "$D/typed"
           ;;
         *'encode launch-brief'*)
           cat "$D/becomes" > "$D/command"
@@ -82,6 +85,13 @@ case "${1:-}" in
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
+      if [ "$payload" = Enter ] && [ -f "$D/typed" ]; then
+        typed=$(cat "$D/typed")
+        case "$typed" in
+          /exit|/quit) printf 'zsh' > "$D/command" ;;
+        esac
+        rm -f "$D/typed"
+      fi
       case "$payload" in
         'export GOTMPDIR='*)
           if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
@@ -109,7 +119,13 @@ case "${1:-}" in
       esac
     done
     printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  capture-pane)
+    if [ -f "$D/typed" ]; then
+      printf '\n❯ %s\n\n' "$(cat "$D/typed")"
+    else
+      printf '\n❯ \n\n'
+    fi
+    exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
 esac
 exit 0

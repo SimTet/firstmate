@@ -67,7 +67,7 @@ case "${1:-}" in
     if [ -f "$typed" ]; then
       printf '\n❯ %s\n\n' "$(cat "$typed")"
     else
-      printf '\n❯ \n\n'
+      printf '\n❯ %s\n\n' "${FM_FAKE_TMUX_STALE_COMPOSER:-}"
     fi
     exit 0 ;;
   list-windows)
@@ -225,6 +225,40 @@ test_dropped_literal_refuses_without_confirming_the_prompt() {
   pass "fm-send strict: a prompt that drops literal text refuses before Enter"
 }
 
+test_stale_matching_draft_cannot_prove_a_dropped_literal_landed() {
+  local dir fb home err log rc message got
+  dir="$TMP_ROOT/stale-draft"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home staledraft); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  message="continue with the requested work"
+  fm_write_meta "$home/state/lane-prompt.meta" "window=sess:fm-lane-prompt" "kind=ship" "harness=claude"
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_FAKE_TMUX_DROP_LITERAL=1 FM_FAKE_TMUX_STALE_COMPOSER="$message" \
+    "$SEND" lane-prompt "$message" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a stale draft matching dropped text reported a confirmed send"
+  got=$(cat "$log")
+  assert_contains "$got" "target=sess:fm-lane-prompt literal=1 arg=$message" "the stale-draft regression did not attempt the literal text"
+  assert_not_contains "$got" "target=sess:fm-lane-prompt literal=0 arg=Enter" "a stale matching draft must not prove the literal landed or press Enter"
+  assert_contains "$(cat "$err")" "not accepted into the composer" "the stale-draft refusal must name failed composer acceptance"
+  pass "fm-send strict: a stale matching draft cannot prove a dropped literal landed"
+}
+
+test_box_drawing_literal_submits_normally() {
+  local dir fb home err log rc message got
+  dir="$TMP_ROOT/box-drawing"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home boxdrawing); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  message='────'
+  fm_write_meta "$home/state/lane-box.meta" "window=sess:fm-lane-box" "kind=ship" "harness=claude"
+
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" lane-box "$message" >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "a box-drawing literal accepted by the composer should submit"$'\n'"$(cat "$err")"
+  got=$(cat "$log")
+  assert_contains "$got" "target=sess:fm-lane-box literal=1 arg=$message" "the box-drawing literal was not typed"
+  assert_contains "$got" "target=sess:fm-lane-box literal=0 arg=Enter" "an accepted box-drawing literal must receive Enter"
+  pass "fm-send strict: a box-drawing-only literal submits after composer acceptance"
+}
+
 # A --key send is how firstmate interrupts a worker, so its exit status is the
 # only signal that the interrupt actually landed.
 # Reporting success for a key that was never delivered would leave supervision
@@ -262,3 +296,5 @@ test_unmatched_single_colon_target_must_exist
 test_fm_prefixed_herdr_session_is_an_explicit_target
 test_healthy_fm_id_send_still_works
 test_dropped_literal_refuses_without_confirming_the_prompt
+test_stale_matching_draft_cannot_prove_a_dropped_literal_landed
+test_box_drawing_literal_submits_normally

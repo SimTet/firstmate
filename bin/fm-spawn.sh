@@ -2828,7 +2828,7 @@ if [ "$HARNESS" = kimi ]; then
     kimi_spawn_fail "kimi brief pointer could not be submitted"
     exit 1
   }
-  if [ "$KIMI_SUBMIT_VERDICT" = send-failed ]; then
+  if [ "$KIMI_SUBMIT_VERDICT" = send-failed ] || [ "$KIMI_SUBMIT_VERDICT" = not-accepted ]; then
     kimi_spawn_fail "kimi brief pointer could not be submitted"
     exit 1
   fi

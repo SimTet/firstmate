@@ -1183,32 +1183,29 @@ EOF
   printf '%s\n' "$joined" | LC_ALL=C awk '{$1=$1; printf "%s", $0}'
 }
 
-# fm_composer_payload_tail_anchor: normalize the tail of text a terminal
-# composer may wrap across rows, preserving punctuation while removing ANSI,
-# Unicode whitespace, and the box-drawing furniture around selected content.
-# A bounded tail keeps a long payload verifiable when its first rows scroll
-# above the bounded composer capture.
-fm_composer_payload_tail_anchor() {  # <text>
-  local anchor=$1
-  anchor=$(printf '%s' "$anchor" | fm_composer_strip_ansi)
-  fm_composer_normalize_spaces_var anchor
-  anchor=${anchor//[$' \t\r\n\v\f']/}
-  anchor=${anchor//[─━│┃╭╮╰╯┌┐└┘├┤┬┴┼╔╗╚╝║═]/}
-  [ -n "$anchor" ] || return 1
-  if [ "${#anchor}" -gt 48 ]; then
-    anchor=${anchor: -48}
-  fi
-  printf '%s' "$anchor"
+# fm_composer_submission_content_normalize: normalize selected composer text
+# and a literal payload alike, so terminal wrapping cannot obscure an observed
+# append. Structural furniture has already been removed by
+# fm_composer_extract_selected_content; every content character remains literal.
+fm_composer_submission_content_normalize() {  # <text>
+  local content=$1
+  content=$(printf '%s' "$content" | fm_composer_strip_ansi)
+  fm_composer_normalize_spaces_var content
+  content=${content//[$' \t\r\n\v\f']/}
+  [ -n "$content" ] || return 1
+  printf '%s' "$content"
 }
 
-# fm_composer_content_has_payload_tail: return success only when the selected
-# composer's real content contains the text payload's normalized tail.
-fm_composer_content_has_payload_tail() {  # <selected-content> <text>
-  local content=$1 anchor
-  anchor=$(fm_composer_payload_tail_anchor "$2") || return 1
-  content=$(fm_composer_payload_tail_anchor "$content") || return 1
-  case "$content" in *"$anchor"*) return 0 ;; esac
-  return 1
+# fm_composer_content_observed_append: return success only when the post-send
+# selected composer content equals its pre-send selection with the normalized
+# literal payload appended.
+fm_composer_content_observed_append() {  # <before> <after> <text>
+  local before=$1 after=$2 text=$3 expected
+  before=$(fm_composer_submission_content_normalize "$before") || before=
+  after=$(fm_composer_submission_content_normalize "$after") || return 1
+  text=$(fm_composer_submission_content_normalize "$text") || return 1
+  expected=$before$text
+  [ "$after" = "$expected" ]
 }
 
 fm_composer_classify_screen() {  # <caps> <screen> [cursor_row] [identity]
