@@ -1186,7 +1186,7 @@ EOF
 # fm_composer_submission_content_normalize: normalize selected composer text
 # and a literal payload alike, so terminal wrapping cannot obscure an observed
 # append. Structural furniture has already been removed by
-# fm_composer_extract_selected_content; every content character remains literal.
+# fm_composer_extract_selected_content; non-whitespace content remains literal.
 fm_composer_submission_content_normalize() {  # <text>
   local content=$1
   content=$(printf '%s' "$content" | fm_composer_strip_ansi)

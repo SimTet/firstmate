@@ -223,9 +223,9 @@ fm_tmux_composer_content() {  # <target>
 }
 
 # fm_tmux_submit_payload_accepted: after the literal text is typed, prove that
-# the selected composer received an append to the exact selection captured
-# before typing. A modal dialog can discard printable text but treat Enter as
-# its default answer, so an unobserved append must refuse without Enter.
+# the selected composer visibly received a normalized append to its previously
+# observed content. A modal dialog can discard printable text but treat Enter
+# as its default answer, so an unobserved append must refuse without Enter.
 fm_tmux_submit_payload_accepted() {  # <target> <before> <text>
   local target=$1 before=$2 text=$3 pane state content
   pane=$(fm_tmux_composer_capture "$target") || return 1
@@ -239,11 +239,11 @@ fm_tmux_submit_payload_accepted() {  # <target> <before> <text>
 }
 
 # fm_tmux_submit_core: type <text> into <target> ONCE, prove the selected
-# composer accepted it, then submit with Enter while verifying the composer
-# cleared. Retries Enter ONLY — never retypes, because a swallowed Enter leaves
-# our text in the composer and retyping would duplicate it. Echoes the final
-# proof-carrying verdict on stdout so callers can require exact `empty` before
-# treating submission as confirmed.
+# composer visibly accepted a normalized append of it, then submit with Enter
+# while verifying the composer cleared. Retries Enter ONLY — never retypes,
+# because a swallowed Enter leaves our text in the composer and retyping would
+# duplicate it. Echoes the final proof-carrying verdict on stdout so callers
+# can require exact `empty` before treating submission as confirmed.
 # Busy-queued Enter (opencode 1.18.4): the harness accepts Enter while mid-turn
 # and queues it for after the current turn, but keeps the typed text visible in
 # the composer. Once the Enter-retry budget is spent and a structurally proven

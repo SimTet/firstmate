@@ -10,12 +10,12 @@
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 #
-# Text submission is verified: the line is typed ONCE, its payload tail must
-# appear in the accepting composer before Enter is sent, then Enter is retried
-# (Enter only, never retyped) until the target backend confirms a submit or
-# reports an inconclusive send. If the literal text is not accepted, or a
-# swallowed Enter is positively confirmed, fm-send exits NON-ZERO so the caller
-# knows the steer did not land instead of silently leaving an unsubmitted
+# Text submission is verified: the line is typed ONCE, its payload must visibly
+# appear as an append in the accepting composer before Enter is sent, then Enter
+# is retried (Enter only, never retyped) until the target backend confirms a
+# submit or reports an inconclusive send. If the literal text is not accepted,
+# or a swallowed Enter is positively confirmed, fm-send exits NON-ZERO so the
+# caller knows the steer did not land instead of silently leaving an unsubmitted
 # instruction.
 # Exit status contract: 0 = submit confirmed (or, for a remote secondmate
 # target, delivered with confirmation pending - see the remote paragraph);
