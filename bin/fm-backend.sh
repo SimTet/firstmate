@@ -835,7 +835,14 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
   local backend=$1 target=$2 expected_label=${3:-} session pane
   case "$backend" in
     tmux)
-      tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1
+      if [ -n "$expected_label" ]; then
+        session=${target%%:*}
+        pane=${target#*:}
+        [ -n "$session" ] && [ "$pane" = "$expected_label" ] && [ "$pane" != "$target" ] || return 1
+        tmux list-windows -t "$session" -F '#{window_name}' 2>/dev/null | grep -Fqx -- "$pane"
+      else
+        tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1
+      fi
       ;;
     herdr)
       fm_backend_source herdr || return 1

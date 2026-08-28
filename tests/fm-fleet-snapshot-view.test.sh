@@ -30,7 +30,12 @@ for arg in "$@"; do
 done
 case "${1:-}" in
   list-windows)
-    sed -n 's/^window=[^:]*://p' "${FM_HOME:?}"/state/*.meta
+    if [ -n "${FM_FAKE_TMUX_MISSING_WINDOW:-}" ]; then
+      sed -n 's/^window=[^:]*://p' "${FM_HOME:?}"/state/*.meta \
+        | grep -Fvx -- "$FM_FAKE_TMUX_MISSING_WINDOW" || true
+    else
+      sed -n 's/^window=[^:]*://p' "${FM_HOME:?}"/state/*.meta
+    fi
     ;;
   display-message)
     case "$*" in
@@ -571,7 +576,7 @@ EOF
       and .paths.report.present == true
   ' >/dev/null || fail "bold task did not join to override-backed backlog and report"
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$data" FM_PROJECTS_OVERRIDE="$projects" "$VIEW")
-  assert_contains "$view" "| bold-task | done / status-log | scout | alpha | tmux | present | $data/bold-task/report.md" \
+  assert_contains "$view" "| bold-task | done / status-log | scout | alpha | tmux | present / alive | $data/bold-task/report.md" \
     "view should render bold in-flight row from snapshot"
   assert_contains "$view" "| blocked-reason | Blocked Reason | beta | ship | queued-comma - waits on queued-comma | - |" \
     "view should render blocked reason without title metadata"
@@ -588,7 +593,7 @@ test_view_renders_snapshot() {
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
-  assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9" \
+  assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present / alive | https://github.com/kunchenguid/firstmate/pull/9" \
     "view should render ship row from snapshot"
   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
     "view should render queued backlog row"
@@ -622,6 +627,36 @@ test_view_renders_dead_secondmate_agent_status() {
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead | - | $home/secondmate-home (absent) |" \
     "view should show a recorded missing secondmate home path"
   pass "fleet view renders secondmate agent liveness"
+}
+
+test_view_renders_missing_ordinary_worker_status() {
+  local home fakebin out view
+  home=$(make_home missing-ordinary-worker)
+  mkdir -p "$home/projects/active-worker"
+  fm_write_meta "$home/state/missing-worker.meta" \
+    "window=firstmate:fm-missing-worker" \
+    "worktree=$home/projects/missing-worker" \
+    "project=alpha" \
+    "harness=codex" \
+    "kind=ship" \
+    "mode=ship"
+  fm_write_meta "$home/state/active-worker.meta" \
+    "window=firstmate:fm-active-worker" \
+    "worktree=$home/projects/active-worker" \
+    "project=alpha" \
+    "harness=codex" \
+    "kind=ship" \
+    "mode=ship"
+  fakebin=$(make_fakebin "$home")
+  out=$(FM_FAKE_TMUX_MISSING_WINDOW=fm-missing-worker PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "missing-worker")
+    | .endpoint.exists == false and .endpoint.agent_alive == "dead"
+  ' >/dev/null || fail "a missing worker must not inherit another tmux window: $out"
+  view=$(FM_FAKE_TMUX_MISSING_WINDOW=fm-missing-worker PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "| missing-worker | unknown / none | ship | alpha | tmux | absent / dead |" \
+    "view should render a missing ordinary worker as absent and dead"
+  pass "fleet view and snapshot agree on a missing ordinary worker"
 }
 
 # A still-open decision must survive a LATER, UNRELATED terminal event on the same
@@ -814,3 +849,4 @@ test_scout_reports_include_teardown_reports
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
+test_view_renders_missing_ordinary_worker_status

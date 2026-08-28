@@ -35,8 +35,7 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
     elif $t.endpoint.exists then "present"
     else "absent" end;
   def endpoint_of($t):
-    if $t.kind == "secondmate" then "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)"
-    else endpoint_exists($t) end;
+    "\(endpoint_exists($t)) / \($t.endpoint.agent_alive)";
   def artifact($t):
     if $t.pr.url != null then $t.pr.url
     elif $t.paths.report.present then $t.paths.report.path

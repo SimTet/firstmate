@@ -290,9 +290,7 @@ SH
   chmod +x "$fakebin/ps"
 }
 
-# make_fake_tmux <fakebin> <live-target>: display-message succeeds only for
-# the given "session:window" target - the exact primitive
-# fm_backend_target_exists uses for a tmux endpoint liveness read.
+# make_fake_tmux <fakebin> <live-target>: lists only the given live window.
 make_fake_tmux() {
   local fakebin=$1 live=$2
   cat > "$fakebin/tmux" <<SH
@@ -308,6 +306,10 @@ case "\${1:-}" in
     done
     [ "\$target" = "$live" ] && { printf '%%1\n'; exit 0; }
     exit 1
+    ;;
+  list-windows)
+    printf '%s\n' "${live#*:}"
+    exit 0
     ;;
 esac
 exit 1
