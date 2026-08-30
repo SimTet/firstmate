@@ -558,8 +558,6 @@ task_json_lines() {
         else
           endpoint_exists=false
         fi
-      fi
-      if [ -n "$target" ]; then
         agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
       fi
     fi

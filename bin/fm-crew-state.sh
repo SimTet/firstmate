@@ -613,9 +613,22 @@ pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACK
 # backend-native call (a handful of local tmux/ps reads, or one herdr API call)
 # added to the no-run fallback path only, never the run-step path above and
 # never a network call.
+# A TERMINAL status-log record is exempt: done/failed is an OUTCOME the crew
+# already recorded, not a liveness claim, so a confirmed-dead harness cannot
+# invalidate it - only a non-terminal reading (working/needs-decision/blocked/
+# paused) is the stale-liveness case this check exists to suppress. Without the
+# exemption a finished single-owner task whose harness exited while its pane
+# survived would lose its completion signal and have its already-answered keyed
+# decision re-opened by fm-fleet-snapshot.sh's lifecycle reconciliation.
 AGENT_STATE=$(fm_backend_agent_state "$TASK_BACKEND" "$BACKEND_TARGET" 2>/dev/null) || AGENT_STATE=unreadable
 case "$AGENT_STATE" in
-  dead|missing) emit unknown agent-state "harness process confirmed $AGENT_STATE: $BACKEND_TARGET" ;;
+  dead|missing)
+    LOG_STATE=$(map_log_state "$LOG_LINE")
+    case "$LOG_STATE" in
+      done|failed) emit "$LOG_STATE" status-log "$(status_line_note "$LOG_LINE")" ;;
+    esac
+    emit unknown agent-state "harness process confirmed $AGENT_STATE: $BACKEND_TARGET"
+    ;;
 esac
 
 # Secondmates idle on their own watcher (idle pane = healthy), so the busy

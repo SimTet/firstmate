@@ -1141,8 +1141,60 @@ test_fast_path_confirmed_dead_agent_overrides_stale_status_log() {
   assert_not_contains "$out" "state: working" "a confirmed-dead agent must never read working from a frozen status log"
   assert_contains "$out" "state: unknown" "confirmed-dead agent -> unknown"
   assert_contains "$out" "source: agent-state" "confirmed-dead agent names its source distinctly"
-  assert_contains "$out" "dead" "the detail names the confirmed verdict"
+  assert_contains "$out" "confirmed dead" "the detail names the confirmed verdict"
   pass "a confirmed-dead agent overrides a frozen working status log"
+}
+
+# The other half of the same boundary: a TERMINAL record is an OUTCOME, not a
+# liveness claim, so a confirmed-dead harness must not withdraw it. A scout that
+# answered its keyed decision and then wrote `done:` before its harness exited
+# (pane/shell surviving) must still surface its terminal state and its report
+# pointer - reporting unknown/agent-state here would re-open the already-answered
+# decision through fm-fleet-snapshot.sh's lifecycle reconciliation.
+test_fast_path_confirmed_dead_agent_keeps_terminal_status_log() {
+  reset_fakes
+  local d; d=$(new_case dead-agent-terminal-log)
+  make_repo_on_branch "$d/wt" fm/scout-donedead
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/scout-donedead.meta" "window=fm:fm-scout-donedead" "worktree=$d/wt" \
+    "kind=scout" "harness=claude"
+  {
+    printf 'needs-decision [key=q1]: which database?\n'
+    printf 'done: report at data/scout-donedead/report.md\n'
+  } > "$d/state/scout-donedead.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-scout-donedead"
+  FM_FAKE_TMUX_AGENT_COMM="bash"
+  local out; out=$(run_crew_state "$d" scout-donedead)
+  assert_contains "$out" "state: done" "a terminal record survives a confirmed-dead harness"
+  assert_contains "$out" "source: status-log" "the terminal record names the status-log source"
+  assert_contains "$out" "report at data/scout-donedead/report.md" "the terminal detail still carries the report pointer"
+  assert_not_contains "$out" "source: agent-state" "a terminal record is not a liveness claim to be overridden"
+  assert_not_contains "$out" "state: unknown" "a completed scout must never be re-read as unknown"
+  pass "a confirmed-dead agent keeps a terminal status-log record"
+}
+
+# Pinned apart from the case above with the SAME fixture minus its trailing
+# terminal line: the still-open keyed decision is non-terminal, so the
+# confirmed-dead verdict must suppress it exactly as before.
+test_fast_path_confirmed_dead_agent_suppresses_nonterminal_status_log() {
+  reset_fakes
+  local d; d=$(new_case dead-agent-nonterminal-log)
+  make_repo_on_branch "$d/wt" fm/scout-parkdead
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/scout-parkdead.meta" "window=fm:fm-scout-parkdead" "worktree=$d/wt" \
+    "kind=scout" "harness=claude"
+  printf 'needs-decision [key=q1]: which database?\n' > "$d/state/scout-parkdead.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_TMUX_AGENT_WINDOW="fm-scout-parkdead"
+  FM_FAKE_TMUX_AGENT_COMM="bash"
+  local out; out=$(run_crew_state "$d" scout-parkdead)
+  assert_contains "$out" "state: unknown" "a non-terminal log under a confirmed-dead harness stays unknown"
+  assert_contains "$out" "source: agent-state" "the non-terminal case still names the agent-state source"
+  assert_not_contains "$out" "state: parked" "a stale open decision must not read as current state"
+  pass "a confirmed-dead agent still suppresses a non-terminal status log"
 }
 
 # The more dangerous variant: the crew died mid-turn, so the LAST thing its own
@@ -1773,6 +1825,8 @@ test_dead_window_ignores_stale_status_log
 test_dead_window_still_reports_terminal_run_step
 test_dead_window_still_reports_active_run_step
 test_fast_path_confirmed_dead_agent_overrides_stale_status_log
+test_fast_path_confirmed_dead_agent_keeps_terminal_status_log
+test_fast_path_confirmed_dead_agent_suppresses_nonterminal_status_log
 test_fast_path_confirmed_dead_agent_overrides_frozen_busy_hook
 test_fast_path_confirmed_alive_agent_still_reports_working
 test_fast_path_inconclusive_agent_state_falls_through_unchanged
