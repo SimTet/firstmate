@@ -42,9 +42,12 @@
 #   4. No run for this crew (pre-validation, or kind=scout): consult the
 #      recovery-grade agent-state classifier (fm_backend_agent_state, owned by
 #      bin/fm-backend.sh) first; a CONFIDENT dead/missing verdict reports
-#      unknown · agent-state instead of trusting a frozen busy-hook read or the
-#      status log - closes the incident where a harness process died but its
-#      pane/shell kept answering as "working" forever. Any other verdict
+#      unknown · agent-state instead of trusting a frozen busy-hook read or a
+#      NON-TERMINAL status log - closes the incident where a harness process
+#      died but its pane/shell kept answering as "working" forever. A TERMINAL
+#      done/failed status-log record is exempt from that verdict and is still
+#      reported as that terminal state, because a recorded outcome is not a
+#      liveness claim a dead harness can withdraw. Any other verdict
 #      (unverified/unreadable/ambiguous) changes nothing: fall back to the
 #      recorded backend's pane busy state, then the status log's last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
