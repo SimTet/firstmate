@@ -12,6 +12,9 @@ set -u
 
 BEARINGS="$ROOT/bin/fm-bearings-snapshot.sh"
 TMP_ROOT=$(fm_test_tmproot fm-bearings)
+# The fake tmux below resolves this fixture's recorded windows from the homes
+# under TMP_ROOT, so it must reach the subprocess environment.
+export TMP_ROOT
 # Keep disposable homes outside the snapshot's fixture repo boundary even when
 # TMPDIR is inside an isolated source worktree.
 FM_ROOT_OVERRIDE="$TMP_ROOT/fixture-root"
@@ -42,13 +45,24 @@ case "${1:-}" in
     esac
     ;;
   list-windows)
-    # fm_backend_agent_alive's session inventory (bin/fm-fleet-snapshot.sh's
-    # endpoint.agent_alive, now populated for every kind, not just secondmates).
-    # This fixture has no real tmux session behind it, so fail generically -
-    # NOT one of the classifier's recognized missing-session/server/socket
-    # patterns - so it reads unreadable rather than a false "missing"/"dead".
-    echo "list-windows not configured for this fixture" >&2
-    exit 1 ;;
+    # The session inventory. BOTH fm_backend_target_exists (the label form, which
+    # cannot trust display-message because real tmux answers an absent target from
+    # the active window) and fm_backend_tmux_agent_state read presence through this
+    # exact call, so the fixture must model its presence rule here and not only in
+    # the display-message arm above: every window a fixture home records is present,
+    # except the dead-* targets that arm already reports absent (it matches
+    # "dead-" anywhere in the target, so this filter must too). Answering the
+    # inventory (rather than failing it) is what keeps a live fixture endpoint
+    # reading present; an omitted window is then honestly absent.
+    ses=""; prev=""
+    for a in "$@"; do
+      [ "$prev" = "-t" ] && { ses=$a; break; }
+      prev=$a
+    done
+    [ -n "$ses" ] || exit 1
+    sed -n "s/^window=$ses://p" "${TMP_ROOT:?}"/*/state/*.meta 2>/dev/null \
+      | grep -v -- 'dead-' | sort -u
+    ;;
 esac
 exit 0
 SH
