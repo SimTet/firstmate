@@ -1,0 +1,58 @@
+firstmate crew-state, upstream issue #3402 / crew-exit-probe incident
+REAL tmux 3.2a - windows named fm-<task-id>, exactly as bin/fm-spawn.sh records them.
+base   = 4ad8cba (upstream main)      branch = fm/fm-liveness
+
+$ tmux list-windows -t fm -F "#{window_name}  foreground=#{pane_current_command}"
+fm-feat-liveness  foreground=claude
+fm-scout-report  foreground=claude
+fm-feat-parked  foreground=claude
+fm-feat-quiet  foreground=claude
+fm-feat-ambig  foreground=somebuildtool
+
+PHASE 1 - every harness process is genuinely running
+-------------------------------------------------------------------------------
+feat-liveness  [agent_state=alive]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: working · source: pane · harness busy (claude-hook)
+scout-report   [agent_state=alive]
+   base   | state: done · source: status-log · report at data/scout-report/report.md
+   branch | state: done · source: status-log · report at data/scout-report/report.md
+feat-parked    [agent_state=alive]
+   base   | state: parked · source: status-log · ship behind a flag?
+   branch | state: parked · source: status-log · ship behind a flag?
+feat-quiet     [agent_state=alive]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: working · source: pane · harness busy (claude-hook)
+feat-ambig     [agent_state=ambiguous]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: working · source: pane · harness busy (claude-hook)
+
+Now KILL the harness process in 3 panes. The pane and its shell survive.
+$ tmux send-keys -t fm:<window> C-c    (harness exits; pane keeps answering)
+
+$ tmux list-windows -t fm -F "#{window_name}  foreground=#{pane_current_command}"
+fm-feat-liveness  foreground=bash
+fm-scout-report  foreground=bash
+fm-feat-parked  foreground=bash
+fm-feat-quiet  foreground=claude
+fm-feat-ambig  foreground=somebuildtool
+$ tmux display-message -p -t fm:fm-feat-liveness "#{pane_id}"     # pane is still readable
+%0
+
+PHASE 2 - harness dead, pane alive
+-------------------------------------------------------------------------------
+feat-liveness  [agent_state=dead]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: unknown · source: agent-state · harness process confirmed dead: fm:fm-feat-liveness
+scout-report   [agent_state=dead]
+   base   | state: done · source: status-log · report at data/scout-report/report.md
+   branch | state: done · source: status-log · report at data/scout-report/report.md
+feat-parked    [agent_state=dead]
+   base   | state: parked · source: status-log · ship behind a flag?
+   branch | state: unknown · source: agent-state · harness process confirmed dead: fm:fm-feat-parked
+feat-quiet     [agent_state=alive]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: working · source: pane · harness busy (claude-hook)
+feat-ambig     [agent_state=ambiguous]
+   base   | state: working · source: pane · harness busy (claude-hook)
+   branch | state: working · source: pane · harness busy (claude-hook)

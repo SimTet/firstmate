@@ -1,0 +1,40 @@
+fm-crew-state.sh: what a supervisor reads for each crew, before and after
+=========================================================================
+
+Fixture: a REAL tmux server (isolated socket) plus a real FM_HOME.
+  live-crew  - window exists, a real verified-harness process is in the foreground
+  dead-crew  - window exists, harness process EXITED, husk shell survives,
+               busy hook frozen at "busy" and status log frozen at "working:"
+  done-crew  - window exists, harness process EXITED, status log records "done:"
+  ghost-crew - the recorded window no longer exists in tmux at all
+
+Live tmux inventory (real tmux 3.2a, isolated socket):
+  fm:fm-live-crew  (foreground command: claude)
+  fm:fm-dead-crew  (foreground command: bash)
+  fm:fm-done-crew  (foreground command: bash)
+  fm:fm-ghost-crew  -- NOT in the inventory: that recorded window is gone
+
+--- live-crew ---
+  recorded: window=fm:fm-live-crew worktree=/tmp/fm-liveness-evidence/home/projects/live-crew project=alpha kind=ship mode=ship backend=tmux harness=claude 
+  status log tail: working: refactoring the retry path
+  BEFORE (4ad8cba):  state: working · source: pane · harness busy (claude-hook)
+  AFTER  (379b683):  state: working · source: pane · harness busy (claude-hook)
+
+--- dead-crew ---
+  recorded: window=fm:fm-dead-crew worktree=/tmp/fm-liveness-evidence/home/projects/dead-crew project=alpha kind=ship mode=ship backend=tmux harness=claude 
+  status log tail: working: pipeline fix round in progress
+  BEFORE (4ad8cba):  state: working · source: pane · harness busy (claude-hook)
+  AFTER  (379b683):  state: unknown · source: agent-state · harness process confirmed dead: fm:fm-dead-crew
+
+--- done-crew ---
+  recorded: window=fm:fm-done-crew worktree=/tmp/fm-liveness-evidence/home/projects/done-crew project=alpha kind=ship mode=ship backend=tmux harness=claude 
+  status log tail: done: shipped, PR https://github.com/example/x/pull/7
+  BEFORE (4ad8cba):  state: unknown · source: pane · harness state unavailable (unknown missing)
+  AFTER  (379b683):  state: done · source: status-log · shipped, PR https://github.com/example/x/pull/7
+
+--- ghost-crew ---
+  recorded: window=fm:fm-ghost-crew worktree=/tmp/fm-liveness-evidence/home/projects/ghost-crew project=alpha kind=ship mode=ship backend=tmux harness=claude 
+  status log tail: working: still churning
+  BEFORE (4ad8cba):  state: unknown · source: pane · harness state unavailable (unknown missing)
+  AFTER  (379b683):  state: unknown · source: agent-state · harness process confirmed missing: fm:fm-ghost-crew
+

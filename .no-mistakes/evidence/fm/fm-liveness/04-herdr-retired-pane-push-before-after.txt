@@ -1,0 +1,25 @@
+Edge delivered by the herdr raw event stream: pane default:wZ:pR went blocked.
+No state/<id>.meta anywhere records that pane (task torn down, or never Firstmate's).
+
+=== BEFORE (4ad8cba): retired pane, no task records it ===
+recorded tasks in state/: 
+- supervisor wake:      WOKE FIRSTMATE: stale: default:wZ:pR (herdr: agent blocked - waiting on human, escalated immediately, not via wedge timer)
+- wake queue payload:   1788204776	1	stale	default:wZ:pR	stale: default:wZ:pR (herdr: agent blocked - waiting on human, escalated immediately, not via wedge timer)
+- watcher triage log:   (empty)
+- herdr dedupe marker:  .herdr-escalated-default_wZ_pR
+
+=== AFTER  (379b683): retired pane, no task records it ===
+recorded tasks in state/: 
+- supervisor wake:      (none - absorbed, no human interrupted)
+- wake queue payload:   (empty)
+- watcher triage log:   [2026-08-31T21:32:56+0200] absorbed push blocked (no recorded task for this pane - retired or unknown endpoint): default:wZ:pR
+- herdr dedupe marker:  .herdr-escalated-default_wZ_pR
+
+Control - the SAME pane once a live task records it (must still escalate):
+=== AFTER  (379b683): live recorded task on the same pane ===
+recorded tasks in state/: live-task.meta 
+- supervisor wake:      WOKE FIRSTMATE: stale: default:wZ:pR (herdr: agent blocked - waiting on human, escalated immediately, not via wedge timer)
+- wake queue payload:   1788204776	1	stale	default:wZ:pR	stale: default:wZ:pR (herdr: agent blocked - waiting on human, escalated immediately, not via wedge timer)
+- watcher triage log:   (empty)
+- herdr dedupe marker:  .herdr-escalated-default_wZ_pR
+

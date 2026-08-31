@@ -1,0 +1,39 @@
+tests/fm-session-start.test.sh - a branch-caused failure this run found and fixed
+==================================================================================
+
+This machine has /usr/bin/node, so the suite's `MISSING: node` fixture assertion
+fails early here and ABORTS the file, on the base commit and on the branch alike.
+That abort was masking everything after it, including the tmux endpoint-liveness
+test that this change actually touches.
+
+Re-running with the suite's own supported knob, FM_TEST_BASE_PATH pointed at a
+node-free mirror of /usr/bin:/bin:/usr/sbin:/sbin (the shape CI has), the file
+runs to the end:
+
+  BASE 4ad8cba          -> 49 ok, 0 failures
+  BRANCH 379b683        -> 21 ok, then:
+     not ok - live tmux endpoint not reported alive (missing: 'endpoint: alive (backend=tmux window=fm-sess:live-window)')
+
+Cause: the branch's new label form of fm_backend_target_exists requires the
+recorded tmux window name to BE the expected label fm-<task-id> (that is what
+rejects tmux's absent-target fallback), but this fixture recorded
+`window=fm-sess:live-window` for task id `task-live`.
+
+  fm_backend_target_exists tmux "fm-sess:live-window" "fm-task-live"
+    base 4ad8cba    -> true   (display-message answered)
+    branch 379b683  -> false  (window name is not the expected fm-task-live label)
+
+Production always records fm-<id> for tmux (bin/fm-spawn.sh: W="fm-$ID"), and
+bin/fm-backend.sh's own endpoint validation already states that legacy tmux
+records are valid only when the window name is exactly fm-<task-id>, so the
+fixture, not the product, was out of step. Fixed by giving the fixture the real
+naming (fm-sess:fm-task-live / fm-sess:fm-task-dead); the assertions are
+otherwise unchanged, and they still pass on the BASE commit's code too.
+
+  BRANCH 379b683 + fixture fix -> 
+# fm-session-start.test.sh: all assertions passed
+  49 ok assertions, 0 failures (same 49 as the base commit)
+
+The two endpoint-liveness cases, now reached and green on the branch:
+  ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+  ok - herdr endpoint liveness is reported per task: alive for a live pane, dead for a gone one

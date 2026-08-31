@@ -1,0 +1,26 @@
+FIRSTMATE LIVENESS END-TO-END TRANSCRIPT
+
+$ fm-crew-state.sh dead-shell
+state: unknown · source: agent-state · harness process confirmed dead: firstmate:fm-dead-shell
+
+$ fm-crew-state.sh finished
+state: done · source: status-log · report at data/finished/report.md
+
+$ fm-fleet-view.sh (Under Way section)
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| alive | working / status-log | secondmate | - | tmux | present / alive | - | /home/simon/.no-mistakes/worktrees/a63d177202a2/01M1CKSZGB5NA68JE346CBB1ZN/.liveness-evidence-fixture/wt-alive | bin/fm-send.sh fm-alive '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+| dead-shell | unknown / agent-state | scout | - | tmux | present / dead | - | /home/simon/.no-mistakes/worktrees/a63d177202a2/01M1CKSZGB5NA68JE346CBB1ZN/.liveness-evidence-fixture/wt-dead-shell | bin/fm-peek.sh fm-dead-shell |
+| finished | done / status-log | scout | - | tmux | present / dead | - | /home/simon/.no-mistakes/worktrees/a63d177202a2/01M1CKSZGB5NA68JE346CBB1ZN/.liveness-evidence-fixture/wt-finished | bin/fm-peek.sh fm-finished |
+| missing-worker | unknown / agent-state | scout | - | tmux | absent / dead | - | /home/simon/.no-mistakes/worktrees/a63d177202a2/01M1CKSZGB5NA68JE346CBB1ZN/.liveness-evidence-fixture/wt-missing-worker | bin/fm-peek.sh fm-missing-worker |
+
+
+$ fm-fleet-snapshot.sh --json | jq endpoint summary
+[{"id":"alive","exists":true,"agent_alive":"alive"},{"id":"dead-shell","exists":true,"agent_alive":"dead"},{"id":"finished","exists":true,"agent_alive":"dead"},{"id":"missing-worker","exists":false,"agent_alive":"dead"}]
+
+$ retired Herdr push transition (no task metadata records default:wZ:pR)
+wake_queue=absent
+wake_calls=absent
+dedupe_marker=committed
+triage=[2026-08-31T22:20:18+0200] absorbed push blocked (no recorded task for this pane - retired or unknown endpoint): default:wZ:pR

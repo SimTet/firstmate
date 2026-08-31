@@ -1,0 +1,58 @@
+bin/fm-session-start.sh FLEET STATE digest - upstream issue #3402
+=================================================================
+
+Issue #3402: the session-start fleet digest printed "endpoint: alive" for tmux
+windows that did not exist.
+
+Root cause, reproduced live against a real tmux 3.2a server: tmux answers a
+display-message for an ABSENT target from the client's active window instead of
+failing, so the endpoint probe read some other pane entirely.
+
+  $ tmux display-message -p -t 'fm:fm-ghost-crew' '#{pane_id} (window=#{window_name})'
+  %2 (window=fm-done-crew)  ; exit=0
+
+  $ tmux list-windows -t fm -F '#{window_name}'   # fm-ghost-crew is NOT there
+  fm-live-crew
+  fm-dead-crew
+  fm-done-crew
+
+Same FM_HOME, same live tmux server, one full session start on each commit:
+
+--- BEFORE (base 4ad8cba) ------------------------------------------------
+--- dead-crew ---
+window=fm:fm-dead-crew
+endpoint: alive (backend=tmux window=fm:fm-dead-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/dead-crew.status):
+--- done-crew ---
+window=fm:fm-done-crew
+endpoint: alive (backend=tmux window=fm:fm-done-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/done-crew.status):
+--- ghost-crew ---
+window=fm:fm-ghost-crew
+endpoint: alive (backend=tmux window=fm:fm-ghost-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/ghost-crew.status):
+--- live-crew ---
+window=fm:fm-live-crew
+endpoint: alive (backend=tmux window=fm:fm-live-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/live-crew.status):
+
+--- AFTER (branch head 379b683) ------------------------------------------
+--- dead-crew ---
+window=fm:fm-dead-crew
+endpoint: alive (backend=tmux window=fm:fm-dead-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/dead-crew.status):
+--- done-crew ---
+window=fm:fm-done-crew
+endpoint: alive (backend=tmux window=fm:fm-done-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/done-crew.status):
+--- ghost-crew ---
+window=fm:fm-ghost-crew
+endpoint: dead (backend=tmux window=fm:fm-ghost-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/ghost-crew.status):
+--- live-crew ---
+window=fm:fm-live-crew
+endpoint: alive (backend=tmux window=fm:fm-live-crew)
+status tail (last 5 line(s), each capped at 220 characters, wake-EVENT history, not current state; full log: /tmp/fm-liveness-evidence/home/state/live-crew.status):
+
+ghost-crew, whose recorded window does not exist, now reports endpoint: dead.
+The three crews whose windows really do exist are unchanged at endpoint: alive.
