@@ -828,9 +828,12 @@ fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pe
 # probe). A gone tmux window or an unqueryable herdr pane (server down, pane
 # closed), missing zellij pane, or unreadable Orca terminal simply fails, which
 # IS "does not exist" for this purpose.
-# Mirrors fm-crew-state.sh's pane_readable check; exists here as one shared
-# primitive so callers that only need a fast alive/dead read (recovery
-# digests, the session-start fleet digest) do not re-derive it inline.
+# For tmux, an expected label requests exact membership in the target session's
+# window inventory and requires the target suffix to equal that label. This
+# avoids tmux display-message resolving an absent target through the active
+# window; unlabeled callers retain the direct pane probe.
+# This shared primitive keeps fast endpoint-presence readers (recovery digests,
+# the session-start fleet digest) from re-deriving those checks inline.
 fm_backend_target_exists() {  # <backend> <target> [expected-label]
   local backend=$1 target=$2 expected_label=${3:-} session pane
   case "$backend" in
